@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bilibili Data Poster</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    <style>
+        /* 字体使用系统最粗的无衬线体 */
+        body {
+            background-color: #1a1a1a;
+            color: #000;
+            font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+            overflow: hidden;
+        }
+
+        /* 核心容器：保持比例的正方形布局 */
+        .poster-container {
+            position: relative;
+            width: 600px;
+            height: 600px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* 单个模块基础样式 */
+        .stat-block {
+            position: absolute;
+            background: #fff;
+            width: 260px;
+            height: 260px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+            cursor: pointer;
+            box-shadow: 0 0 40px rgba(0,0,0,0.5);
+        }
+
+        /* 布局位置偏移 - 还原图片中的错落感 */
+        .block-view { top: 40px; left: 60px; z-index: 10; }      /* 播放 - 左上 */
+        .block-like { top: 100px; right: 40px; z-index: 5; }    /* 点赞 - 右上 */
+        .block-coin { bottom: 100px; left: 40px; z-index: 5; }   /* 投币 - 左下 */
+        .block-fav  { bottom: 40px; right: 60px; z-index: 10; }  /* 收藏 - 右下 */
+
+        /* 竖排文字类 */
+        .vertical-text {
+            writing-mode: vertical-rl;
+            text-orientation: upright;
+            letter-spacing: -5px;
+        }
+
+        /* 大标题字号 */
+        .block-title {
+            font-size: 80px;
+            font-weight: 900;
+            line-height: 0.9;
+            margin-bottom: 10px;
+        }
+
+        /* 数据字号 */
+        .block-value {
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 24px;
+            font-weight: bold;
+        }
+
+        /* 四角箭头 */
+        .arrow {
+            position: absolute;
+            font-size: 40px;
+            font-weight: 100;
+        }
+
+        /* 全屏激活态 */
+        .stat-block.fullscreen {
+            position: fixed;
+            top: 0 !important; left: 0 !important;
+            width: 100vw !important; height: 100vh !important;
+            z-index: 100;
+            margin: 0;
+            background: #fff;
+        }
+
+        /* 底部导航栏 */
+        .bottom-nav {
+            position: fixed;
+            bottom: 40px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #000;
+            padding: 8px;
+            border-radius: 50px;
+            display: flex;
+            gap: 10px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            z-index: 150;
+        }
+        .nav-btn {
+            color: #fff;
+            padding: 8px 24px;
+            border-radius: 40px;
+            font-size: 14px;
+            font-weight: bold;
+            transition: 0.3s;
+        }
+        .nav-btn.active { background: #fff; color: #000; }
+
+        /* 右侧滑出的列表面板 */
+        .side-panel {
+            position: fixed;
+            right: 0; top: 0; bottom: 0;
+            width: 350px;
+            background: rgba(0,0,0,0.9);
+            color: white;
+            transform: translateX(100%);
+            transition: 0.5s ease;
+            z-index: 200;
+            padding: 40px;
+        }
+        .side-panel.open { transform: translateX(0); }
+    </style>
+</head>
+<body class="flex justify-center items-center h-screen">
+
+    <div id="app" class="relative w-full h-full flex justify-center items-center">
+        
+        <div class="absolute top-10 left-10 text-white/30 font-bold">
+            {{ currentVideo?.title || 'NULL' }}
+        </div>
+
+        <div class="poster-container" v-if="currentVideo">
+            
+            <div @click="activeCard = activeCard === 'view' ? null : 'view'" 
+                 :class="['stat-block block-view', activeCard === 'view' ? 'fullscreen' : '']">
+                <span class="arrow top-2 right-4">↗</span>
+                <div class="block-title vertical-text">播放</div>
+                <div class="block-value">{{ formatNumber(displayStats.view) }}</div>
+            </div>
+
+            <div @click="activeCard = activeCard === 'like' ? null : 'like'" 
+                 :class="['stat-block block-like', activeCard === 'like' ? 'fullscreen' : '']">
+                <span class="arrow bottom-2 right-4">↘</span>
+                <div class="block-title">点赞</div>
+                <div class="block-value">{{ formatNumber(displayStats.like) }}</div>
+            </div>
+
+            <div @click="activeCard = activeCard === 'coin' ? null : 'coin'" 
+                 :class="['stat-block block-coin', activeCard === 'coin' ? 'fullscreen' : '']">
+                <span class="arrow top-2 left-4">↖</span>
+                <div class="block-title">投币</div>
+                <div class="block-value">{{ formatNumber(displayStats.coin) }}</div>
+            </div>
+
+            <div @click="activeCard = activeCard === 'fav' ? null : 'fav'" 
+                 :class="['stat-block block-fav', activeCard === 'fav' ? 'fullscreen' : '']">
+                <span class="arrow bottom-2 left-4">↙</span>
+                <div class="block-title vertical-text">收藏</div>
+                <div class="block-value">{{ formatNumber(displayStats.favorite) }}</div>
+            </div>
+
+        </div>
+
+        <nav class="bottom-nav">
+            <button class="nav-btn" @click="toggleUI('settings')">设置</button>
+            <button class="nav-btn active" @click="toggleUI('query')">查询</button>
+            <button class="nav-btn" @click="showList = !showList">列表</button>
+        </nav>
+
+        <aside :class="['side-panel', showList ? 'open' : '']">
+            <h3 class="text-xl font-black mb-6">视频队列管理</h3>
+            <div class="flex gap-2 mb-6">
+                <input v-model="inputBV" placeholder="输入BV号..." class="flex-1 bg-white/10 border-none p-2 rounded text-sm outline-none">
+                <button @click="addVideo" class="bg-white text-black px-4 py-1 rounded text-xs font-bold">添加</button>
+            </div>
+            <ul class="space-y-4">
+                <li v-for="(v, i) in videoList" :key="v.bvid" class="border-b border-white/10 pb-2">
+                    <div class="flex justify-between text-xs text-white/40 mb-1">
+                        <span>{{ v.bvid }}</span>
+                        <button @click="videoList.splice(i, 1)" class="text-red-500">删除</button>
+                    </div>
+                    <div class="text-sm truncate font-bold">{{ v.title }}</div>
+                </li>
+            </ul>
+        </aside>
+
+    </div>
+
+    <script>
+        const { createApp, ref, onMounted, computed, watch } = Vue;
+
+        createApp({
+            setup() {
+                const inputBV = ref('');
+                const showList = ref(false);
+                const activeCard = ref(null);
+                
+                const videoList = ref([]);
+
+                const currentStats = ref({ view: 0, like: 0, coin: 0, favorite: 0 });
+                const displayStats = ref({ view: 0, like: 0, coin: 0, favorite: 0 });
+
+                const currentVideo = computed(() => videoList.value[videoList.value.length - 1]);
+
+                const fetchData = async () => {
+                    if (!currentVideo.value) return;
+                    try {
+                        const res = await fetch(`http://localhost:5000/bili/video?bvid=${currentVideo.value.bvid}`);
+                        const raw = await res.json();
+                        if (raw.code === 0) {
+                            const data = raw.data;
+                            currentVideo.value.title = data.title;
+                            currentStats.value = {
+                                view: data.stat.view,
+                                like: data.stat.like,
+                                coin: data.stat.coin,
+                                favorite: data.stat.favorite
+                            };
+                        }
+                    } catch (e) { console.error("Flask Offline"); }
+                };
+
+                const addVideo = () => {
+                    if(!inputBV.value) return;
+                    videoList.value.push({ bvid: inputBV.value, title: '同步中...' });
+                    inputBV.value = '';
+                    fetchData();
+                };
+
+                // 数字变动平滑动画
+                watch(currentStats, (newVal) => {
+                    Object.keys(newVal).forEach(key => {
+                        gsap.to(displayStats.value, {
+                            duration: 0.8,
+                            [key]: newVal[key],
+                            ease: "power2.out"
+                        });
+                    });
+                }, { deep: true });
+
+                const formatNumber = (num) => Math.floor(num).toLocaleString();
+
+                onMounted(() => {
+                    fetchData();
+                    setInterval(fetchData, 1000);
+                });
+
+                return {
+                    videoList, currentVideo, inputBV, showList, activeCard,
+                    displayStats, addVideo, formatNumber
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
